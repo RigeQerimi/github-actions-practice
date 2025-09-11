@@ -1,0 +1,63 @@
+# Node.js CI on self-hosted Linux agent
+trigger:
+  branches:
+    include: [ main ]
+
+pr:
+  branches:
+    include: [ main ]
+
+# Use your self-hosted agent pool
+pool:
+  name: Default
+
+# Tweak these if needed
+variables:
+  ARTIFACT_NAME: drop
+  ZIP_PATH: $(Build.ArtifactStagingDirectory)/app.zip
+  BUILD_DIR: $(Build.SourcesDirectory)/dist   # change to your output folder, or to $(Build.SourcesDirectory) if no build
+
+steps:
+  - checkout: self
+    clean: true
+
+  # Use Node.js 20.x (downloads if not present on agent)
+  - task: NodeTool@0
+    displayName: Use Node 20.x
+    inputs:
+      versionSpec: '20.x'
+
+  # Install dependencies with lockfile for reproducible builds
+  - script: |
+      npm ci
+    displayName: Install deps (npm ci)
+    workingDirectory: $(Build.SourcesDirectory)
+
+  # Run tests if your package.json has "test"
+  - script: |
+      npm test --if-present
+    displayName: Run tests
+    workingDirectory: $(Build.SourcesDirectory)
+
+  # Build if your package.json has "build"
+  - script: |
+      npm run build --if-present
+    displayName: Build (if present)
+    workingDirectory: $(Build.SourcesDirectory)
+
+  # Archive build output; if you don't have dist/, set BUILD_DIR to $(Build.SourcesDirectory)
+  - task: ArchiveFiles@2
+    displayName: Archive files
+    inputs:
+      rootFolderOrFile: $(BUILD_DIR)
+      includeRootFolder: false
+      archiveType: zip
+      archiveFile: $(ZIP_PATH)
+      verbose: false
+
+  - task: PublishBuildArtifacts@1
+    displayName: Publish artifact
+    inputs:
+      PathtoPublish: $(Build.ArtifactStagingDirectory)
+      ArtifactName: $(ARTIFACT_NAME)
+      publishLocation: Container
